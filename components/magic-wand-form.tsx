@@ -32,6 +32,7 @@ export function MagicWandForm() {
   const locale = useAppStore((s) => s.locale);
   const preferences = useAppStore((s) => s.preferences);
   const router = useRouter();
+  const [currencyTouched, setCurrencyTouched] = useState(false);
 
   const [form, setForm] = useState({
     origin: "",
@@ -69,8 +70,8 @@ export function MagicWandForm() {
     return Object.keys(errs).length === 0;
   }, [form]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!validate()) return;
 
     sessionStorage.setItem(
@@ -132,6 +133,9 @@ export function MagicWandForm() {
             onChange={(location) => {
               updateField("destinationLocation", location);
               updateField("destination", location.displayName);
+              if (!currencyTouched && location.country?.toLowerCase().includes("india")) {
+                updateField("currency", "INR");
+              }
             }}
             placeholder="e.g., Stockholm, Tokyo..."
             icon={<MapPin className="size-4" />}
@@ -222,7 +226,10 @@ export function MagicWandForm() {
             />
             <Select
               value={form.currency}
-              onValueChange={(val) => updateField("currency", val)}
+              onValueChange={(val) => {
+                setCurrencyTouched(true);
+                updateField("currency", val);
+              }}
             >
               <SelectTrigger className="w-24 rounded-lg">
                 <SelectValue />
@@ -284,7 +291,7 @@ export function MagicWandForm() {
       </div>
 
       {/* Submit button */}
-      <GenerateTripButton onClick={handleSubmit} />
+  <GenerateTripButton onClick={() => handleSubmit()} />
     </form>
   );
 }

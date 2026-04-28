@@ -8,6 +8,7 @@ const AMADEUS_CLIENT_SECRET = process.env.AMADEUS_CLIENT_SECRET;
 import { withRateLimit, type RateLimitOptions } from "@/lib/utils/rate-limiter";
 import { withRetry } from "@/lib/utils/retry";
 import { Place } from "@/lib/agents/places";
+import { callGemini } from "@/lib/gemini/client";
 
 const TEQUILA_RATE_LIMIT: RateLimitOptions = { limit: 5, interval: 1000 };
 const AMADEUS_RATE_LIMIT: RateLimitOptions = { limit: 2, interval: 1000 };
@@ -23,6 +24,7 @@ export interface PricingRequest {
   budget: number;
   currency: string;
   pace: "fast" | "slow";
+  budgetMode?: "normal" | "budget_friendly";
   places?: Place[];
 }
 
@@ -79,6 +81,7 @@ export interface PricingResponse {
       subtotal: number;
     };
     meals: number;
+    misc: number;
     contingency: number;
     totalEstimated: number;
     remaining: number;
@@ -91,6 +94,7 @@ let amadeusToken: { value: string; expiresAt: number } | null = null;
 
 export async function estimatePricing(params: PricingRequest): Promise<PricingResponse> {
   const { tripDetails, budget, currency, pace, places } = params;
+  const budgetMode = params.budgetMode ?? "normal";
   const nights = Math.max(
     1,
     Math.ceil(
@@ -99,36 +103,42 @@ export async function estimatePricing(params: PricingRequest): Promise<PricingRe
     )
   );
 
-  const [flights, hotel] = await Promise.all([
-    fetchFlights(tripDetails, pace).catch(async (err: Error) => {
+  const [flights, hotel, perDay] = await Promise.all([
+    fetchFlights(tripDetails, pace, currency).catch(async (err: Error) => {
       console.warn("[Pricing Agent] Tequila flight search failed, trying Amadeus:", err.message);
-      return fetchFlightsWithAmadeus(tripDetails).catch((amadeusErr: Error) => {
+      return fetchFlightsWithAmadeus(tripDetails, currency).catch((amadeusErr: Error) => {
         console.warn("[Pricing Agent] Amadeus flight search failed too:", amadeusErr.message);
         return getFallbackFlights(tripDetails, budget);
       });
     }),
-    fetchHotels(tripDetails, nights).catch((err) => {
+    fetchHotels(tripDetails, nights, currency, budgetMode).catch((err) => {
       console.warn("[Pricing Agent] Hotel search failed, using fallback:", err.message);
-      return getFallbackHotel(tripDetails, nights);
+      return getFallbackHotel(tripDetails, nights, currency, budgetMode);
     }),
+    estimatePerDayCostsWithGemini(tripDetails, currency, budgetMode).catch(() => null),
   ]);
   
-  const activityCost = getActivityCosts(tripDetails, pace, places);
+  const activityCost = getActivityCosts(tripDetails, pace, places, budgetMode);
 
   const transportSubtotal = flights.outbound.cost + flights.return.cost;
   const activitiesSubtotal = activityCost.items.reduce((sum, item) => sum + item.cost, 0);
-  const meals = nights * tripDetails.travelers * 35;
-  const contingency = Math.round(budget * 0.1);
+  const mealsPerPersonPerDay = perDay?.mealsPerPersonPerDay ?? 35;
+  const miscPerPersonPerDay = perDay?.miscPerPersonPerDay ?? 15;
+  const meals = nights * tripDetails.travelers * mealsPerPersonPerDay;
+  const misc = nights * tripDetails.travelers * miscPerPersonPerDay;
+  const contingencyRate = budgetMode === "budget_friendly" ? 0.05 : 0.1;
+  const contingency = Math.round(budget * contingencyRate);
   const totalEstimated =
-    transportSubtotal + hotel.totalCost + activitiesSubtotal + meals + contingency;
+    transportSubtotal + hotel.totalCost + activitiesSubtotal + meals + misc + contingency;
   const remaining = Math.max(0, budget - totalEstimated);
   
   // Stricter budget viability for realistic planning
   let budgetViability: "feasible" | "tight" | "exceeds" = "feasible";
-  if (totalEstimated > budget * 1.5) {
+  const practicalMin = perDay?.practicalMinimumTotal;
+  if (typeof practicalMin === "number" && practicalMin > 0 && budget < practicalMin * 0.85) {
     budgetViability = "exceeds";
   } else if (totalEstimated > budget) {
-    budgetViability = "tight";
+    budgetViability = totalEstimated > budget * 1.25 ? "exceeds" : "tight";
   }
 
   return {
@@ -152,16 +162,20 @@ export async function estimatePricing(params: PricingRequest): Promise<PricingRe
         subtotal: activitiesSubtotal,
       },
       meals,
+      misc,
       contingency,
       totalEstimated,
       remaining,
       budgetViability,
-      recommendations: buildRecommendations(pace),
+      recommendations: [
+        ...buildRecommendations(pace, budgetMode),
+        ...(perDay?.notes?.length ? perDay.notes.slice(0, 3) : []),
+      ],
     },
   };
 }
 
-async function fetchFlightsWithAmadeus(tripDetails: PricingRequest["tripDetails"]) {
+async function fetchFlightsWithAmadeus(tripDetails: PricingRequest["tripDetails"], currency: string) {
   const token = await getAmadeusToken();
   if (!token) throw new Error("Amadeus token missing");
 
@@ -184,7 +198,7 @@ async function fetchFlightsWithAmadeus(tripDetails: PricingRequest["tripDetails"
   url.searchParams.set("departureDate", tripDetails.departureDate);
   url.searchParams.set("returnDate", tripDetails.returnDate);
   url.searchParams.set("adults", `${tripDetails.travelers}`);
-  url.searchParams.set("currencyCode", "USD");
+  url.searchParams.set("currencyCode", currency || "USD");
   url.searchParams.set("max", "1");
 
   const response = await guardedRequest("amadeus-flights", AMADEUS_RATE_LIMIT, () =>
@@ -234,7 +248,11 @@ async function fetchFlightsWithAmadeus(tripDetails: PricingRequest["tripDetails"
   return { outbound: outboundLeg, return: returnLeg };
 }
 
-async function fetchFlights(tripDetails: PricingRequest["tripDetails"], pace: PricingRequest["pace"]) {
+async function fetchFlights(
+  tripDetails: PricingRequest["tripDetails"],
+  pace: PricingRequest["pace"],
+  currency: string
+) {
   if (!TEQUILA_API_KEY) {
     throw new Error("Tequila API key missing");
   }
@@ -250,7 +268,7 @@ async function fetchFlights(tripDetails: PricingRequest["tripDetails"], pace: Pr
   url.searchParams.set("return_from", arrival);
   url.searchParams.set("return_to", arrival);
   url.searchParams.set("adults", `${tripDetails.travelers}`);
-  url.searchParams.set("curr", "USD");
+  url.searchParams.set("curr", currency || "USD");
   url.searchParams.set("max_stopovers", "1");
   url.searchParams.set("sort", "price");
   url.searchParams.set("limit", "1");
@@ -301,7 +319,12 @@ function mapTequilaFlightLeg(raw: any, route: any[], travelers: number): Transpo
   };
 }
 
-async function fetchHotels(tripDetails: PricingRequest["tripDetails"], nights: number) {
+async function fetchHotels(
+  tripDetails: PricingRequest["tripDetails"],
+  nights: number,
+  currency: string,
+  budgetMode: NonNullable<PricingRequest["budgetMode"]>
+) {
   try {
     const token = await getAmadeusToken();
     if (!token) {
@@ -339,7 +362,8 @@ async function fetchHotels(tripDetails: PricingRequest["tripDetails"], nights: n
     const data = await response.json();
     const offer = data.data?.[0];
     const hotelName = offer?.hotel?.name ?? "Premium City Hotel";
-    const pricePerNight = Number(offer?.offers?.[0]?.price?.base ?? 130);
+    const rawPrice = Number(offer?.offers?.[0]?.price?.base ?? 130);
+    const pricePerNight = budgetMode === "budget_friendly" ? Math.min(rawPrice, rawPrice * 0.75) : rawPrice;
 
     return {
       name: hotelName,
@@ -475,16 +499,21 @@ function getFallbackFlights(tripDetails: PricingRequest["tripDetails"], budget: 
   };
 }
 
-function getFallbackHotel(tripDetails: PricingRequest["tripDetails"], nights: number): AccommodationCost {
-  const pricePerNight = 120;
+function getFallbackHotel(
+  tripDetails: PricingRequest["tripDetails"],
+  nights: number,
+  _currency: string,
+  budgetMode: NonNullable<PricingRequest["budgetMode"]>
+): AccommodationCost {
+  const pricePerNight = budgetMode === "budget_friendly" ? 55 : 120;
   return {
-    name: "Premium City Hotel",
-    type: "hotel" as const,
+    name: budgetMode === "budget_friendly" ? "Budget Guesthouse" : "Premium City Hotel",
+    type: (budgetMode === "budget_friendly" ? "hostel" : "hotel") as "hotel" | "hostel" | "airbnb",
     nights,
     pricePerNight,
     totalCost: pricePerNight * nights,
-    rating: 4.6,
-    amenities: ["WiFi", "Breakfast", "Gym", "Spa"],
+    rating: budgetMode === "budget_friendly" ? 4.2 : 4.6,
+    amenities: budgetMode === "budget_friendly" ? ["WiFi", "Shared Kitchen"] : ["WiFi", "Breakfast", "Gym", "Spa"],
     location: tripDetails.destination,
   };
 }
@@ -492,7 +521,8 @@ function getFallbackHotel(tripDetails: PricingRequest["tripDetails"], nights: nu
 function getActivityCosts(
   tripDetails: PricingRequest["tripDetails"],
   pace: PricingRequest["pace"],
-  places?: Place[]
+  places: Place[] | undefined,
+  budgetMode: NonNullable<PricingRequest["budgetMode"]>
 ) {
   const travelers = tripDetails.travelers;
   
@@ -500,13 +530,17 @@ function getActivityCosts(
     // Estimate based on actual places
     const items = places.slice(0, 5).map((place) => {
       const perPerson = getPriceValue(place.price);
+      const adjustedPerPerson =
+        budgetMode === "budget_friendly"
+          ? Math.min(perPerson, perPerson === 0 ? 0 : Math.max(0, Math.round(perPerson * 0.6)))
+          : perPerson;
       return {
         name: place.name,
         type: place.type,
         duration: `${place.duration ?? 90}m`,
         category: "must-see" as const,
-        cost: perPerson * travelers,
-        perPerson,
+        cost: adjustedPerPerson * travelers,
+        perPerson: adjustedPerPerson,
       };
     });
   
@@ -520,14 +554,14 @@ function getActivityCosts(
       type: "guided-tour",
       duration: "3h",
       category: "must-see" as const,
-      perPerson: 50,
+      perPerson: budgetMode === "budget_friendly" ? 0 : 50,
     },
     {
       name: "Local Experience",
       type: "activity",
       duration: "2h",
       category: (pace === "fast" ? "optional" : "must-see") as "must-see" | "optional" | "free",
-      perPerson: 40,
+      perPerson: budgetMode === "budget_friendly" ? 10 : 40,
     },
   ];
 
@@ -549,18 +583,77 @@ function getPriceValue(price?: string): number {
   return price.length * 20;
 }
 
-function buildRecommendations(pace: PricingRequest["pace"]) {
-  return pace === "fast"
-    ? [
-        "Rise early—the first flights pull in before lunch",
-        "Book optional activities in blocks to save time",
-        "Use public transit passes for quick city hops",
-      ]
-    : [
-        "Add an extra night for better hotel rates",
-        "Mix paid activities with free walking tours",
-        "Book museum passes early for discounts",
-      ];
+type GeminiPerDayCosts = {
+  mealsPerPersonPerDay: number;
+  miscPerPersonPerDay: number;
+  practicalMinimumTotal?: number;
+  notes?: string[];
+};
+
+async function estimatePerDayCostsWithGemini(
+  tripDetails: PricingRequest["tripDetails"],
+  currency: string,
+  budgetMode: NonNullable<PricingRequest["budgetMode"]>
+): Promise<GeminiPerDayCosts | null> {
+  const prompt = `
+Return ONLY valid minified JSON:
+{"mealsPerPersonPerDay":number,"miscPerPersonPerDay":number,"practicalMinimumTotal":number,"notes":string[]}
+
+All numbers must be in ${currency}.
+
+Trip:
+Origin: ${tripDetails.origin}
+Destination: ${tripDetails.destination}
+Dates: ${tripDetails.departureDate} to ${tripDetails.returnDate}
+Travelers: ${tripDetails.travelers}
+Mode: ${budgetMode}
+
+Rules:
+- Be realistic and conservative (avoid optimistic pricing).
+- Include local transport, basic meals, small fees/tips in misc.
+`;
+
+  const text = await callGemini(prompt);
+  if (!text) return null;
+  try {
+    const jsonStr = text.replace(/```json\n?|\n?```/g, "").trim();
+    const parsed = JSON.parse(jsonStr) as Partial<GeminiPerDayCosts>;
+    if (typeof parsed.mealsPerPersonPerDay !== "number" || typeof parsed.miscPerPersonPerDay !== "number") {
+      return null;
+    }
+    return {
+      mealsPerPersonPerDay: Math.max(0, Math.round(parsed.mealsPerPersonPerDay)),
+      miscPerPersonPerDay: Math.max(0, Math.round(parsed.miscPerPersonPerDay)),
+      practicalMinimumTotal:
+        typeof parsed.practicalMinimumTotal === "number" && parsed.practicalMinimumTotal > 0
+          ? Math.round(parsed.practicalMinimumTotal)
+          : undefined,
+      notes: Array.isArray(parsed.notes) ? parsed.notes.filter((n) => typeof n === "string") : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildRecommendations(
+  pace: PricingRequest["pace"],
+  budgetMode: NonNullable<PricingRequest["budgetMode"]>
+) {
+  const base =
+    pace === "fast"
+      ? [
+          "Rise early—the first flights pull in before lunch",
+          "Book optional activities in blocks to save time",
+          "Use public transit passes for quick city hops",
+        ]
+      : [
+          "Add an extra night for better hotel rates",
+          "Mix paid activities with free walking tours",
+          "Book museum passes early for discounts",
+        ];
+  return budgetMode === "budget_friendly"
+    ? ["Prefer guesthouses/hostels and public transport", ...base]
+    : base;
 }
 
 async function guardedRequest<T>(

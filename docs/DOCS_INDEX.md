@@ -12,7 +12,7 @@ Welcome to AutoNomad! This guide helps you navigate all available documentation 
 | **Get the app running** | [`QUICKSTART.md`](#quickstart) | 10 min |
 | **Understand the codebase** | [`PROJECT_STRUCTURE.md`](#project-structure) | 15 min |
 | **Implement backend** | [`BACKEND_INTEGRATION.md`](#backend-integration) | 30 min |
-| **See overview & features** | [`README.md`](#readme) | 20 min |
+| **See overview & features** | [`README.md`](../README.md) | 20 min |
 | **Navigate all docs** | This file | 5 min |
 
 ---
@@ -141,7 +141,7 @@ This file helps you find the right documentation quickly.
 ## 🗺️ Documentation Map
 
 ```
-README.md
+../README.md
 ├─ Overview & Features
 ├─ Quick Start
 └─ Project Status
@@ -184,7 +184,7 @@ COMPLETION_SUMMARY.md
 ## 🎯 By Role
 
 ### **Frontend Developer**
-1. Start with: `README.md`
+1. Start with: `../README.md`
 2. Then: `QUICKSTART.md` (Common Tasks section)
 3. Reference: `PROJECT_STRUCTURE.md`
 4. For styling: `PROJECT_STRUCTURE.md` (Styling System section)
@@ -197,21 +197,21 @@ COMPLETION_SUMMARY.md
 
 ### **DevOps/Deployment**
 1. Start with: `QUICKSTART.md` (Deployment section)
-2. Then: `README.md` (Environment Variables section)
+2. Then: `../README.md` (Environment Variables section)
 3. Reference: `BACKEND_INTEGRATION.md` (Deployment section)
 
 ### **Project Manager**
 1. Start with: `COMPLETION_SUMMARY.md`
-2. Then: `README.md` (Overview section)
+2. Then: `../README.md` (Overview section)
 3. For details: `COMPLETION_SUMMARY.md` (Feature Checklist)
 
 ### **Designer**
-1. Start with: `README.md` (Design System section)
+1. Start with: `../README.md` (Design System section)
 2. Then: `PROJECT_STRUCTURE.md` (Styling System section)
 3. Reference: Component files for implementation
 
 ### **New Team Member**
-1. Start with: `README.md`
+1. Start with: `../README.md`
 2. Then: `PROJECT_STRUCTURE.md`
 3. Then: `QUICKSTART.md`
 4. Reference: Individual component files as needed
@@ -222,7 +222,7 @@ COMPLETION_SUMMARY.md
 
 | Document | Lines | Topics | Best For |
 |----------|-------|--------|----------|
-| README.md | 471 | Overview, Architecture | Everyone |
+| ../README.md | 471 | Overview, Architecture | Everyone |
 | QUICKSTART.md | 305 | Getting Started | New Developers |
 | PROJECT_STRUCTURE.md | 343 | Code Organization | Understanding Code |
 | BACKEND_INTEGRATION.md | 476 | API Implementation | Backend Dev |
@@ -237,18 +237,18 @@ COMPLETION_SUMMARY.md
 ### By Topic
 
 #### **Architecture & Design**
-- `README.md` - Architecture overview
+- `../README.md` - Architecture overview
 - `PROJECT_STRUCTURE.md` - Detailed architecture
 - `BACKEND_INTEGRATION.md` - API architecture
 
 #### **Features & Status**
 - `COMPLETION_SUMMARY.md` - Complete feature checklist
-- `README.md` - Feature highlights
+- `../README.md` - Feature highlights
 - `QUICKSTART.md` - Feature implementation status
 
 #### **Setup & Installation**
 - `QUICKSTART.md` - Step-by-step setup
-- `README.md` - Getting started
+- `../README.md` - Getting started
 - `BACKEND_INTEGRATION.md` - Backend setup
 
 #### **Development Workflow**
@@ -284,7 +284,7 @@ COMPLETION_SUMMARY.md
 #### **Deployment**
 - `QUICKSTART.md` - Deployment steps
 - `BACKEND_INTEGRATION.md` - Deployment checklist
-- `README.md` - Environment variables
+- `../README.md` - Environment variables
 
 #### **Debugging**
 - `QUICKSTART.md` - Debugging tips & common issues

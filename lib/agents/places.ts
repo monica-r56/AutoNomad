@@ -92,7 +92,12 @@ export async function planPlaces(params: PlanPlacesParams): Promise<PlacesRespon
   let places: Place[] = [];
   
   if (GOOGLE_KEY) {
-    places = await fetchPlacesFromGoogle(location, radius, fetchLimit, params.activityTypes, params.destination).catch(() => []);
+    // Google Nearby Search hard-limits each call to 20 results; for fast pace we do multiple focused
+    // searches to capture the truly "touristy/popular" set (e.g., top landmarks) that might not show
+    // up when mixing many place types in a single call.
+    places = params.pace === "fast"
+      ? await fetchPlacesFromGoogleMulti(location, radius, fetchLimit, params.activityTypes, params.destination).catch(() => [])
+      : await fetchPlacesFromGoogle(location, radius, fetchLimit, params.activityTypes, params.destination).catch(() => []);
   }
 
   if (places.length < 10) {
@@ -108,12 +113,9 @@ export async function planPlaces(params: PlanPlacesParams): Promise<PlacesRespon
   
   // Sort based on pace
   if (params.pace === "fast") {
-    // Prioritize high rating AND review count (popularity)
-    uniquePlaces.sort((a, b) => {
-      const scoreA = (a.rating * 10) + Math.log10(a.reviews + 1);
-      const scoreB = (b.rating * 10) + Math.log10(b.reviews + 1);
-      return scoreB - scoreA;
-    });
+    // Fast pace = "touristy" (high-rating + high-review-count) with minimal low-popularity items.
+    const ordered = rankFastPace(uniquePlaces, params.limit ?? 30);
+    uniquePlaces.splice(0, uniquePlaces.length, ...ordered);
   } else {
     // Slow pace: more variety, mix high rated with interesting gems (lower review count but good rating)
     uniquePlaces.sort((a, b) => {
@@ -139,6 +141,36 @@ export async function planPlaces(params: PlanPlacesParams): Promise<PlacesRespon
     places: finalPlaces,
     clusters,
   };
+}
+
+function rankFastPace(places: Place[], limit: number): Place[] {
+  const score = (p: Place) => {
+    // Make review-count matter much more than before (log10 barely moves between 5k and 100k).
+    // Rating still matters, but in fast mode we prefer "iconic + widely reviewed" spots.
+    const ratingScore = p.rating * 100;
+    const reviewsScore = Math.log10(Math.max(1, p.reviews)) * 80 + Math.sqrt(Math.max(0, p.reviews));
+    return ratingScore + reviewsScore;
+  };
+
+  const reviews = places.map((p) => p.reviews).sort((a, b) => a - b);
+  const percentile = (p: number) => {
+    if (!reviews.length) return 0;
+    const idx = Math.min(reviews.length - 1, Math.max(0, Math.floor(p * (reviews.length - 1))));
+    return reviews[idx] ?? 0;
+  };
+
+  // Adaptive cutoff: at least 5k reviews, and at least the 60th percentile for the current city.
+  const cutoff = Math.max(5000, percentile(0.6));
+
+  const popular = places.filter((p) => p.reviews >= cutoff).sort((a, b) => score(b) - score(a));
+  const rest = places.filter((p) => p.reviews < cutoff).sort((a, b) => score(b) - score(a));
+
+  // Prefer majority from popular set when possible.
+  const targetPopular = Math.max(0, Math.round(limit * 0.85));
+  const pickedPopular = popular.slice(0, targetPopular);
+  const remainder = limit - pickedPopular.length;
+  return [...pickedPopular, ...rest.slice(0, remainder), ...popular.slice(targetPopular)]
+    .filter(Boolean);
 }
 
 function dedupePlaces(places: Place[]): Place[] {
@@ -272,6 +304,34 @@ async function fetchPlacesFromGoogle(
     console.error("[Places Agent] Error fetching from Google:", error);
     return [];
   }
+}
+
+async function fetchPlacesFromGoogleMulti(
+  location: Location,
+  radius: number,
+  limit: number,
+  activityTypes?: string[],
+  destination?: string
+): Promise<Place[]> {
+  // If user explicitly chose types, don't override; just call once.
+  if (activityTypes?.length) {
+    return fetchPlacesFromGoogle(location, radius, limit, activityTypes, destination);
+  }
+
+  const typeGroups: string[][] = [
+    ["tourist_attraction"],
+    ["historical_landmark", "museum"],
+    // "natural_feature" is not supported by Google Places (New) includedTypes for nearby search.
+    ["park", "zoo", "amusement_park", "stadium"],
+  ];
+
+  const results = await Promise.all(
+    typeGroups.map((types) =>
+      fetchPlacesFromGoogle(location, radius, 20, types, destination).catch(() => [])
+    )
+  );
+
+  return results.flat().slice(0, limit);
 }
 
 function formatGooglePlace(item: any, destination?: string): Place | null {

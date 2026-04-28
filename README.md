@@ -152,7 +152,7 @@ Complete Itinerary
   popular-destinations.ts      # Pre-curated data
 ```
 
-See `PROJECT_STRUCTURE.md` for full directory breakdown.
+See `docs/PROJECT_STRUCTURE.md` for full directory breakdown.
 
 ## 🚀 Getting Started
 
@@ -193,9 +193,9 @@ pnpm start
 
 | Document | Purpose |
 |----------|---------|
-| **QUICKSTART.md** | Getting started, common tasks, debugging |
-| **BACKEND_INTEGRATION.md** | Backend setup, API implementation, LangGraph patterns |
-| **PROJECT_STRUCTURE.md** | Codebase organization, component flow, state management |
+| **docs/QUICKSTART.md** | Getting started, common tasks, debugging |
+| **docs/BACKEND_INTEGRATION.md** | Backend setup, API implementation, LangGraph patterns |
+| **docs/PROJECT_STRUCTURE.md** | Codebase organization, component flow, state management |
 
 ## 🔌 Backend Integration Checklist
 
@@ -229,7 +229,7 @@ pnpm start
   - Create users & trips tables
   - Implement auth integration
 
-See `BACKEND_INTEGRATION.md` for detailed implementation guide.
+See `docs/BACKEND_INTEGRATION.md` for detailed implementation guide.
 
 ## 🎨 Design System
 
@@ -439,9 +439,9 @@ MIT License - Free to use and modify
 ## 📞 Support
 
 For issues or questions:
-1. Check `QUICKSTART.md` for common problems
-2. Review `BACKEND_INTEGRATION.md` for backend setup
-3. See `PROJECT_STRUCTURE.md` for code organization
+1. Check `docs/QUICKSTART.md` for common problems
+2. Review `docs/BACKEND_INTEGRATION.md` for backend setup
+3. See `docs/PROJECT_STRUCTURE.md` for code organization
 4. Check browser console for `[v0]` debug logs
 5. Open GitHub issue or contact team
 

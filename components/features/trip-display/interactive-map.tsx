@@ -20,12 +20,12 @@ export function InteractiveMap({
 
   useEffect(() => {
     if (!mapContainer.current || !activities.length) return;
+    const container = mapContainer.current;
 
     // Dynamically import Leaflet to avoid SSR issues
     if (typeof window === "undefined") return;
 
     import("leaflet").then((L) => {
-      import("leaflet/dist/leaflet.css");
 
       if (map.current) {
         map.current.remove();
@@ -43,7 +43,7 @@ export function InteractiveMap({
       const centerLng = (minLng + maxLng) / 2;
 
       // Initialize map
-      map.current = L.map(mapContainer.current).setView(
+      map.current = L.map(container).setView(
         [centerLat, centerLng],
         12
       );

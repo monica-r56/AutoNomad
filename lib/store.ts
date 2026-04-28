@@ -162,6 +162,7 @@ export async function generateTrip(params: {
   budget: number;
   currency: string;
   pace: "fast" | "slow";
+  budgetMode?: "normal" | "budget_friendly";
 }): Promise<Itinerary> {
   try {
     const response = await fetch("/api/v1/generate-trip", {
@@ -181,5 +182,4 @@ export async function generateTrip(params: {
     throw error;
   }
 }
-
 

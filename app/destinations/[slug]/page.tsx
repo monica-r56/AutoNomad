@@ -22,7 +22,7 @@ export default function DestinationDetailPage() {
 
   const destination = useMemo(() => {
     const slug = typeof params.slug === "string" ? params.slug : params.slug?.[0];
-    return getDestinationBySlug(slug);
+    return slug ? getDestinationBySlug(slug) : null;
   }, [params]);
 
   if (!destination) {

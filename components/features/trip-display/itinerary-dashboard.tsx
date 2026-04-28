@@ -39,9 +39,10 @@ export function ItineraryDashboard() {
           departureDate: itinerary.departureDate,
           duration: itinerary.duration,
           travelers: itinerary.travelers,
-          budget: itinerary.budget, // Keep same budget but ask for budget-friendly logic
+          budget: itinerary.budget, // Keep same budget; backend will propose the most practical low-budget plan
           currency: itinerary.currency,
-          pace: "slow", // Switch to slow pace for better budget options
+          pace: itinerary.pace,
+          budgetMode: "budget_friendly",
         }),
       });
 
@@ -60,8 +61,11 @@ export function ItineraryDashboard() {
     }
   };
 
-  // Flatten all activities from all days for map
-  const allActivities = itinerary.days.flatMap((day) => day.activities);
+  // Map should reflect the sightseeing route (not flights/hotels anchored at a single point),
+  // otherwise the polyline can look like it "round-trips" back to the same region repeatedly.
+  const allActivities = itinerary.days.flatMap((day) =>
+    day.activities.filter((a) => a.type === "activity")
+  );
 
   return (
     <div className="flex flex-col h-screen">

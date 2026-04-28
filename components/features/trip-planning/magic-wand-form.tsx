@@ -31,6 +31,7 @@ const CURRENCIES = ["USD", "EUR", "GBP", "SEK", "NOK", "CHF", "JPY", "INR"];
 export function MagicWandForm() {
   const [mounted, setMounted] = useState(false);
   const locale = useAppStore((s) => s.locale);
+  const [currencyTouched, setCurrencyTouched] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -150,6 +151,9 @@ export function MagicWandForm() {
             onChange={(location) => {
               updateField("destinationLocation", location);
               updateField("destination", location.displayName);
+              if (!currencyTouched && location.country?.toLowerCase().includes("india")) {
+                updateField("currency", "INR");
+              }
             }}
             placeholder="e.g., Stockholm, Tokyo..."
             icon={<MapPin className="size-4" />}
@@ -249,7 +253,10 @@ export function MagicWandForm() {
             {mounted && (
               <Select
                 value={form.currency}
-                onValueChange={(val) => updateField("currency", val)}
+                onValueChange={(val) => {
+                  setCurrencyTouched(true);
+                  updateField("currency", val);
+                }}
               >
                 <SelectTrigger className="w-24 rounded-lg">
                   <SelectValue />

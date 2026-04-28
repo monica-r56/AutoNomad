@@ -18,6 +18,7 @@ interface GenerateTripRequest {
   budget: number;
   currency: string;
   pace: "fast" | "slow";
+  budgetMode?: "normal" | "budget_friendly";
 }
 
 const TripState = Annotation.Root({
@@ -152,6 +153,7 @@ function createPricingNode() {
         budget: state.tripParams.budget,
         currency: state.tripParams.currency,
         pace: state.tripParams.pace,
+        budgetMode: state.tripParams.budgetMode ?? "normal",
         places: placesResponse?.places,
       });
     });
@@ -359,7 +361,7 @@ function buildActivityFromPlace(
     description = `[Weather Alternative] ${place.indoorAlternative.description}`;
     isOutdoor = false;
     usedAlternative = true;
-    badges.push("top-rated"); // Mark as a good alternative
+    if (!badges.includes("top-rated")) badges.push("top-rated"); // Mark as a good alternative
   }
 
   return {

@@ -135,12 +135,12 @@ export function ActivityCard({
         {/* Badges */}
         {activity.badges.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
-            {activity.badges.map((b) => {
+            {Array.from(new Set(activity.badges)).map((b, i) => {
               const config = BADGE_CONFIG[b];
               const BadgeIcon = config.icon;
               return (
                 <Badge
-                  key={b}
+                  key={`${b}-${i}`}
                   variant="outline"
                   className={`gap-1 py-0.5 text-[10px] ${config.className}`}
                 >
